@@ -2,7 +2,7 @@ name: Odyssey seat watcher
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 */8 * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,7 @@ jobs:
       - name: Run the watcher
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SCRAPEDO_TOKEN: ${{ secrets.SCRAPEDO_TOKEN }}
         run: python watcher.py
 
       - name: Remember what we saw this run
