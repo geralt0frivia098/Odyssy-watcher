@@ -962,51 +962,6 @@
       "SeatAllocationType": "2"
     }
   },
-  "384635": {
-    "date": "08-02-2026",
-    "time": "2026-08-02T07:00:00",
-    "title": "The Odyssey",
-    "available": null,
-    "signals": {
-      "SeatAllocationType": "2"
-    }
-  },
-  "384636": {
-    "date": "08-02-2026",
-    "time": "2026-08-02T10:45:00",
-    "title": "The Odyssey",
-    "available": null,
-    "signals": {
-      "SeatAllocationType": "2"
-    }
-  },
-  "384637": {
-    "date": "08-02-2026",
-    "time": "2026-08-02T14:30:00",
-    "title": "The Odyssey",
-    "available": null,
-    "signals": {
-      "SeatAllocationType": "2"
-    }
-  },
-  "384638": {
-    "date": "08-02-2026",
-    "time": "2026-08-02T18:10:00",
-    "title": "The Odyssey",
-    "available": null,
-    "signals": {
-      "SeatAllocationType": "2"
-    }
-  },
-  "384639": {
-    "date": "08-02-2026",
-    "time": "2026-08-02T21:55:00",
-    "title": "The Odyssey",
-    "available": null,
-    "signals": {
-      "SeatAllocationType": "2"
-    }
-  },
   "384645": {
     "date": "08-03-2026",
     "time": "2026-08-03T08:00:00",
