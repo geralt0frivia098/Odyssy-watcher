@@ -18,7 +18,7 @@ SCRAPEDO_TOKEN = os.environ.get("SCRAPEDO_TOKEN", "")
 CINEMA_ID = "1010"
 MOVIE_KEYWORD = "odyssey"
 FORMAT_KEYWORDS = ["70mm", "imax"]
-DAYS_AHEAD = 5
+DAYS_AHEAD = 11
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "odyssey_state.json")
 DEBUG = False
 
