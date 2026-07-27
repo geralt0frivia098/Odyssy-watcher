@@ -1,51 +1,26 @@
 #!/usr/bin/env python3
 """
 Regal Irvine Spectrum -> IMAX 70mm "The Odyssey" seat-opening watcher
+Routes requests through scrape.do (free tier) since Regal's site blocks
+cloud/datacenter IPs like GitHub Actions runners directly.
 """
 
 import json
 import os
-import re
 import sys
+import urllib.parse
 from datetime import datetime, timedelta
 
 import requests
 
-# ------------------------- CONFIG -------------------------
-
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
+SCRAPEDO_TOKEN = os.environ.get("SCRAPEDO_TOKEN", "")
 CINEMA_ID = "1010"
 MOVIE_KEYWORD = "odyssey"
 FORMAT_KEYWORDS = ["70mm", "imax"]
-DAYS_AHEAD = 21
+DAYS_AHEAD = 5
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "odyssey_state.json")
 DEBUG = False
-
-THEATRE_PAGE = "https://www.regmovies.com/theatres/regal-edwards-irvine-spectrum-1010"
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": THEATRE_PAGE,
-    "Origin": "https://www.regmovies.com",
-    "Sec-Fetch-Site": "same-origin",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Dest": "empty",
-}
-
-SESSION = requests.Session()
-SESSION.headers.update(HEADERS)
-
-
-def warm_up_session():
-    try:
-        SESSION.get(THEATRE_PAGE, timeout=20)
-    except Exception as e:
-        print(f"[warmup] failed: {e}")
 
 
 def ntfy(title, message, priority="high", tags="ticket"):
@@ -61,14 +36,20 @@ def ntfy(title, message, priority="high", tags="ticket"):
 
 
 def fetch_showtimes(date_str):
-    url = (
+    target_url = (
         "https://www.regmovies.com/api/getShowtimes"
         f"?theatres={CINEMA_ID}&date={date_str}&hoCode=&ignoreCache=false&moviesOnly=false"
     )
+    encoded = urllib.parse.quote_plus(target_url)
+    proxy_url = f"https://api.scrape.do/?token={SCRAPEDO_TOKEN}&url={encoded}&geoCode=us&super=true&render=true"
+
     try:
-        resp = SESSION.get(url, timeout=20)
+        resp = requests.get(proxy_url, timeout=60)
         resp.raise_for_status()
-        return resp.json()
+        text = resp.text
+        if "<pre>" in text:
+            text = text.split("<pre>")[1].split("</pre>")[0]
+        return json.loads(text)
     except Exception as e:
         print(f"[fetch] {date_str}: request failed ({e})")
         return None
@@ -106,8 +87,6 @@ def find_availability_signal(performance):
 
 
 def scan():
-    warm_up_session()
-
     today = datetime.now()
     dates = [(today + timedelta(days=i)).strftime("%m-%d-%Y") for i in range(DAYS_AHEAD)]
 
@@ -200,7 +179,8 @@ def main():
 
 
 if __name__ == "__main__":
-    if not NTFY_TOPIC:
-        print("NTFY_TOPIC is not set. Add it as a GitHub Secret named NTFY_TOPIC.")
+    missing = [n for n, v in [("NTFY_TOPIC", NTFY_TOPIC), ("SCRAPEDO_TOKEN", SCRAPEDO_TOKEN)] if not v]
+    if missing:
+        print(f"Missing secret(s): {', '.join(missing)}. Add them under repo Settings -> Secrets and variables -> Actions.")
         sys.exit(1)
     main()
