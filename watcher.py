@@ -1,40 +1,6 @@
 #!/usr/bin/env python3
 """
 Regal Irvine Spectrum -> IMAX 70mm "The Odyssey" seat-opening watcher
-----------------------------------------------------------------------
-Polls Regal's own showtimes API (the same one regmovies.com uses) for
-Regal Irvine Spectrum, looks for IMAX 70mm showings of "The Odyssey",
-and pushes a notification to your phone via ntfy.sh when:
-
-  1. A brand-new IMAX 70mm showtime for the movie appears, or
-  2. A showtime that was sold out now shows availability again.
-
-SETUP
------
-1. pip install requests
-2. Pick a private ntfy topic name (long/random, e.g. "odyssey-irvine-x7q2p")
-   and set NTFY_TOPIC below.
-3. In the ntfy app (iOS): tap "+", subscribe to that exact topic name.
-4. Run this script on a schedule (cron / Task Scheduler / launchd), e.g.
-   every 15 minutes:
-
-     */15 * * * * /usr/bin/python3 /path/to/regal_odyssey_watcher.py >> /path/to/watcher.log 2>&1
-
-   Don't poll much more often than that -- Regal's site sits behind
-   Cloudflare and aggressive polling risks getting temporarily blocked.
-
-NOTES / CAVEATS
-----------------
-- Regal's API isn't officially public and its JSON field names aren't
-  documented anywhere, so this script is written defensively: it scans
-  performance records for ANY field that looks like it relates to sold
-  out status or seat counts, rather than hardcoding one exact key name.
-  The first time you run it with DEBUG=True, it will print the raw
-  fields it sees for a matching performance so you can confirm it's
-  reading the right thing.
-- If Regal ever returns a Cloudflare challenge page instead of JSON,
-  the script will just log an error and skip that run -- it won't
-  crash your cron job.
 """
 
 import json
@@ -48,12 +14,14 @@ import requests
 # ------------------------- CONFIG -------------------------
 
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
-CINEMA_ID = "1010"  # Regal Irvine Spectrum (Edwards Irvine Spectrum ScreenX/IMAX/RPX/VIP)
+CINEMA_ID = "1010"
 MOVIE_KEYWORD = "odyssey"
-FORMAT_KEYWORDS = ["70mm", "imax"]  # a matching performance/attributes must mention these
-DAYS_AHEAD = 21  # how many days out to check
+FORMAT_KEYWORDS = ["70mm", "imax"]
+DAYS_AHEAD = 21
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "odyssey_state.json")
-DEBUG = False  # set True once to sanity-check the raw fields Regal returns
+DEBUG = False
+
+THEATRE_PAGE = "https://www.regmovies.com/theatres/regal-edwards-irvine-spectrum-1010"
 
 HEADERS = {
     "User-Agent": (
@@ -61,10 +29,23 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
     ),
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.regmovies.com/theatres/regal-edwards-irvine-spectrum-1010",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": THEATRE_PAGE,
+    "Origin": "https://www.regmovies.com",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
 }
 
-# ------------------------------------------------------------
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
+
+
+def warm_up_session():
+    try:
+        SESSION.get(THEATRE_PAGE, timeout=20)
+    except Exception as e:
+        print(f"[warmup] failed: {e}")
 
 
 def ntfy(title, message, priority="high", tags="ticket"):
@@ -80,13 +61,12 @@ def ntfy(title, message, priority="high", tags="ticket"):
 
 
 def fetch_showtimes(date_str):
-    """date_str format: MM-DD-YYYY"""
     url = (
         "https://www.regmovies.com/api/getShowtimes"
         f"?theatres={CINEMA_ID}&date={date_str}&hoCode=&ignoreCache=false&moviesOnly=false"
     )
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = SESSION.get(url, timeout=20)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
@@ -99,22 +79,11 @@ def looks_like_odyssey(title):
 
 
 def matches_70mm_imax(performance, movie):
-    """
-    Check the performance (and, as a fallback, the parent movie record) for
-    any text that indicates IMAX 70mm. Regal's Vista-based API usually
-    tucks this into an "Attributes" list on the performance.
-    """
     blob = json.dumps(performance).lower() + " " + json.dumps(movie).lower()
     return all(k in blob for k in [f.lower() for f in FORMAT_KEYWORDS])
 
 
 def find_availability_signal(performance):
-    """
-    Defensive scan: look for any key whose name suggests sold-out status
-    or seat counts, since the exact schema isn't documented. Returns a
-    dict of {key: value} for anything that looks relevant, plus a best
-    guess "available" boolean if it can figure one out.
-    """
     signals = {}
     for k, v in performance.items():
         lk = k.lower()
@@ -125,7 +94,6 @@ def find_availability_signal(performance):
     for k, v in signals.items():
         lk = k.lower()
         if "sold" in lk:
-            # SoldOut True -> not available
             if isinstance(v, bool):
                 available_guess = not v
         elif "seat" in lk or "avail" in lk:
@@ -138,10 +106,12 @@ def find_availability_signal(performance):
 
 
 def scan():
+    warm_up_session()
+
     today = datetime.now()
     dates = [(today + timedelta(days=i)).strftime("%m-%d-%Y") for i in range(DAYS_AHEAD)]
 
-    found = {}  # performance_id -> details dict
+    found = {}
 
     for date_str in dates:
         data = fetch_showtimes(date_str)
@@ -207,7 +177,6 @@ def main():
         old_info = old_state.get(perf_id)
 
         if old_info is None:
-            # brand new showtime appeared
             msg = f"{info['title']} - IMAX 70mm\n{info['date']} {info['time']}"
             print(f"[new] {msg}")
             ntfy(
